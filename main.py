@@ -10,18 +10,14 @@ from datetime import date
 from streamlit_calendar import calendar
 from streamlit_option_menu import option_menu
 
-# --- CORREÇÃO DE IMPORTAÇÃO ---
-# Como os arquivos db.py, styles.py e logic.py estão na mesma pasta que o main.py
-# nós importamos eles diretamente, sem usar "from utils import ..."
+# --- CORREÇÃO CRÍTICA DE PATH E IMPORTAÇÃO (PARA STREAMLIT CLOUD) ---
+# Adiciona o diretório atual ao sistema para encontrar os módulos
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Importação direta (arquivos na mesma pasta)
 import db
 import styles
 import logic
-
-# --- 1. CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Gestão de Projetos", page_icon="🚀", layout="wide")
-styles.apply_magalog_style()
-
-# ... O RESTO DO CÓDIGO CONTINUA IGUAL DAQUI PARA BAIXO ...
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Gestão de Projetos", page_icon="🚀", layout="wide")
@@ -458,5 +454,4 @@ elif menu == "Config & Export":
         if os.path.exists("project_management.db"):
             os.remove("project_management.db")
             for key in list(st.session_state.keys()): del st.session_state[key]
-
             st.rerun()
