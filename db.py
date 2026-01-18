@@ -54,7 +54,7 @@ def init_db():
         FOREIGN KEY(project_id) REFERENCES projects(id)
     )''')
 
-    # 4. Gaps
+    # 4. Gaps/Notas
     c.execute('''CREATE TABLE IF NOT EXISTS project_notes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id INTEGER,
@@ -64,31 +64,43 @@ def init_db():
         created_at DATE,
         FOREIGN KEY(project_id) REFERENCES projects(id)
     )''')
+
+    # 5. Áreas / Sponsors
+    c.execute('''CREATE TABLE IF NOT EXISTS sponsors (
+        name TEXT PRIMARY KEY
+    )''')
+
+    # 6. Equipe / Contatos (NOVO)
+    c.execute('''CREATE TABLE IF NOT EXISTS team_members (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        role TEXT,
+        area TEXT,
+        email TEXT,
+        phone TEXT
+    )''')
     
     conn.commit()
     conn.close()
-    migrate_db()
-
-def migrate_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    try: c.execute("ALTER TABLE projects ADD COLUMN results_text TEXT"); 
-    except: pass
-    try: c.execute("ALTER TABLE risks ADD COLUMN status TEXT DEFAULT 'Ativo'"); 
-    except: pass
-    conn.commit()
-    conn.close()
+    
+    seed_data()
 
 def seed_data():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    
+    # Seed Projetos
     c.execute("SELECT count(*) FROM projects")
     if c.fetchone()[0] == 0:
         today = date.today()
-        # Cria projeto e tarefa padrão para evitar erro de tabela vazia
-        c.execute("INSERT INTO projects (name, manager, start_date, end_date, status, archived) VALUES (?,?,?,?,?,0)", ("Projeto Exemplo", "Gabriel", today, today+timedelta(30), "Em andamento"))
-        c.execute("INSERT INTO tasks (project_id, title, start_date, end_date, status, progress) VALUES (1, 'Tarefa Inicial', ?, ?, 'A fazer', 0)", (today, today))
-        conn.commit()
+        c.execute("INSERT INTO projects (name, manager, start_date, end_date, status, archived) VALUES (?,?,?,?,?,0)", ("Exemplo de Projeto", "Gerente", today, today+timedelta(30), "Em andamento"))
+    
+    # Seed Areas
+    default_areas = ["Geral", "TI", "RH", "Financeiro", "Marketing", "Operações", "Comercial", "Logística"]
+    for area in default_areas:
+        c.execute("INSERT OR IGNORE INTO sponsors (name) VALUES (?)", (area,))
+        
+    conn.commit()
     conn.close()
 
 def run_query(query, params=(), fetch=True):
