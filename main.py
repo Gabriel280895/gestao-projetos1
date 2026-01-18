@@ -89,7 +89,7 @@ with st.sidebar:
             "Docs & Gaps", 
             "Agenda / Calendário", 
             "Histórico / Arquivados", 
-            "Cadastros & Config" # ABA UNIFICADA
+            "⚙️ Cadastros & Config" # ABA UNIFICADA
         ],
         icons=[
             "speedometer2", 
@@ -485,8 +485,8 @@ elif menu == "Histórico / Arquivados":
 # =========================================================
 # 9. CADASTROS & CONFIG (ABA UNIFICADA)
 # =========================================================
-elif menu == "Cadastros & Config":
-    st.title("⚙️Cadastros & Configurações")
+elif menu == "⚙️ Cadastros & Config":
+    st.title("⚙️ Cadastros & Configurações")
     
     tab_team, tab_areas, tab_db = st.tabs(["👥 Gerenciar Equipe", "🏢 Gerenciar Áreas", "⚠️ Sistema"])
     
