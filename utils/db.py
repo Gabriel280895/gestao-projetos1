@@ -10,7 +10,7 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # 1. Projetos
+    # 1. Projetos (ADICIONADO CAMPO date_changes)
     c.execute('''CREATE TABLE IF NOT EXISTS projects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
@@ -23,6 +23,7 @@ def init_db():
         priority TEXT,
         scope TEXT,
         results_text TEXT, 
+        date_changes INTEGER DEFAULT 0,
         archived INTEGER DEFAULT 0
     )''')
     
@@ -70,7 +71,7 @@ def init_db():
         name TEXT PRIMARY KEY
     )''')
 
-    # 6. Equipe / Contatos (NOVO)
+    # 6. Equipe / Contatos
     c.execute('''CREATE TABLE IF NOT EXISTS team_members (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
@@ -93,7 +94,8 @@ def seed_data():
     c.execute("SELECT count(*) FROM projects")
     if c.fetchone()[0] == 0:
         today = date.today()
-        c.execute("INSERT INTO projects (name, manager, start_date, end_date, status, archived) VALUES (?,?,?,?,?,0)", ("Exemplo de Projeto", "Gerente", today, today+timedelta(30), "Em andamento"))
+        # Adicionado 0 para date_changes
+        c.execute("INSERT INTO projects (name, manager, start_date, end_date, status, date_changes, archived) VALUES (?,?,?,?,?,0,0)", ("Exemplo de Projeto", "Gerente", today, today+timedelta(30), "Em andamento"))
     
     # Seed Areas
     default_areas = ["Geral", "TI", "RH", "Financeiro", "Marketing", "Operações", "Comercial", "Logística"]
