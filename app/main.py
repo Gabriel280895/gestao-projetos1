@@ -22,8 +22,8 @@ try:
 except:
     pass
 
-# Inicialização DB
-if not os.path.exists("project_management.db"):
+# Inicialização DB (Verifica v2 conforme sua versão atual)
+if not os.path.exists("project_management_v2.db"): 
     db.init_db()
 elif 'db_initialized' not in st.session_state:
     db.init_db()
@@ -31,13 +31,16 @@ elif 'db_initialized' not in st.session_state:
 
 # --- CARREGAMENTO DE DADOS ---
 df_all_projects = db.run_query("SELECT * FROM projects")
-# Garante a existência da coluna date_changes no DataFrame para evitar erros visuais
-if df_all_projects.empty or 'date_changes' not in df_all_projects.columns:
-    cols = ['id', 'name', 'code', 'sponsor', 'manager', 'start_date', 'end_date', 'status', 'priority', 'scope', 'results_text', 'date_changes', 'archived']
-    if not df_all_projects.empty:
-        if 'date_changes' not in df_all_projects.columns: df_all_projects['date_changes'] = 0
-    else:
-        df_all_projects = pd.DataFrame(columns=cols)
+
+# Garante estrutura do DataFrame mesmo se vazio
+cols = ['id', 'name', 'code', 'sponsor', 'manager', 'start_date', 'end_date', 'status', 'priority', 'scope', 'results_text', 'date_changes', 'archived']
+if df_all_projects.empty:
+    df_all_projects = pd.DataFrame(columns=cols)
+else:
+    # Garante que colunas novas existam no DF para não quebrar visualização
+    for c in cols:
+        if c not in df_all_projects.columns:
+            df_all_projects[c] = 0 if c == 'date_changes' or c == 'archived' else ""
 
 df_active = df_all_projects[df_all_projects['archived'] == 0].copy()
 df_archived = df_all_projects[df_all_projects['archived'] == 1].copy()
@@ -89,7 +92,7 @@ with st.sidebar:
         menu_title="Gestão de Projetos", 
         options=[
             "Dashboard Executivo", 
-            "Novo projeto",  # RENOMEADO AQUI
+            "Novo projeto", 
             "Projetos Ativos", 
             "Tarefas", 
             "Cronograma (Gantt)", 
@@ -112,7 +115,7 @@ with st.sidebar:
             "gear-wide-connected"
         ],
         menu_icon="rocket-takeoff",
-        default_index=0,
+        default_index=2, 
         styles={
             "container": {"padding": "5px", "background-color": "#0B2D5C"},
             "icon": {"color": "white", "font-size": "20px"}, 
@@ -217,7 +220,7 @@ if menu == "Dashboard Executivo":
         st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. NOVO PROJETO (ANTIGA CENTRAL DE CADASTROS)
+# 2. NOVO PROJETO
 # =========================================================
 elif menu == "Novo projeto":
     st.title("Novo projeto")
@@ -245,10 +248,9 @@ elif menu == "Novo projeto":
                 st.markdown("**Fim**")
                 d2 = st.date_input("", value=date.today()+timedelta(days=30), label_visibility="collapsed")
             
-            st.markdown("") # Espaço
+            st.markdown("") 
             if st.form_submit_button("Criar Projeto"):
                 if nm:
-                    # CORRIGIDO: Agora insere na coluna date_changes
                     db.execute_command("INSERT INTO projects (name, manager, sponsor, start_date, end_date, status, date_changes, archived) VALUES (?,?,?,?,?,?,0,0)", (nm, mg, sp, d1, d2, "Backlog"))
                     st.success(f"✅ Projeto '{nm}' criado com sucesso!")
                 else: st.warning("Nome obrigatório.")
@@ -313,7 +315,7 @@ elif menu == "Novo projeto":
                     st.success("✅ Salvo com sucesso!")
 
 # =========================================================
-# 3. PROJETOS ATIVOS (COM EDIÇÃO AVANÇADA)
+# 3. PROJETOS ATIVOS (CORRIGIDO: Status não trava mais)
 # =========================================================
 elif menu == "Projetos Ativos":
     st.title("📁 Projetos em Andamento")
@@ -337,7 +339,6 @@ elif menu == "Projetos Ativos":
         
         if sel:
             curr = df_active[df_active['name'] == sel].iloc[0]
-            # Garante leitura do contador
             changes_count = curr['date_changes'] if 'date_changes' in curr and pd.notnull(curr['date_changes']) else 0
             
             with st.form("ed_p_adv"):
@@ -350,18 +351,29 @@ elif menu == "Projetos Ativos":
                     new_manager = st.text_input("", value=curr['manager'], label_visibility="collapsed")
                     
                     st.markdown("**Status**")
-                    new_status = st.selectbox("", ["Em andamento", "Em Risco", "Concluído"], index=["Em andamento", "Em Risco", "Concluído"].index(curr['status']), label_visibility="collapsed")
+                    # --- LISTA COMPLETA E PROTEÇÃO DE ERRO ---
+                    status_options = ["Backlog", "Em andamento", "Em Risco", "Concluído", "Cancelado"]
+                    
+                    try:
+                        idx = status_options.index(curr['status'])
+                    except ValueError:
+                        idx = 0 # Se o status for desconhecido, marca o primeiro da lista
+                        
+                    new_status = st.selectbox("", status_options, index=idx, label_visibility="collapsed")
                 
                 with c2:
                     st.markdown("**Nova Data de Entrega**")
-                    current_date_obj = pd.to_datetime(curr['end_date']).date()
+                    try:
+                        current_date_obj = pd.to_datetime(curr['end_date']).date()
+                    except:
+                        current_date_obj = date.today()
+                    
                     new_end_date = st.date_input("", value=current_date_obj, label_visibility="collapsed")
                     
                     st.markdown("")
                     arq = st.checkbox("Arquivar Projeto", value=bool(curr['archived']))
 
                 if st.form_submit_button("💾 Salvar Alterações"):
-                    # CORRIGIDO: Lógica de atualização com contador
                     final_changes = int(changes_count)
                     if str(new_end_date) != str(current_date_obj):
                         final_changes += 1
@@ -540,7 +552,7 @@ elif menu == "Config & Export":
         st.subheader("Reset")
         st.warning("Clique aqui para apagar o banco antigo e corrigir o erro de 'coluna faltando'.")
         if st.button("RESETAR BANCO DE DADOS (Zerar Tudo)"):
-            if os.path.exists("project_management.db"):
-                os.remove("project_management.db")
+            if os.path.exists("project_management_v2.db"): 
+                os.remove("project_management_v2.db")
                 for key in list(st.session_state.keys()): del st.session_state[key]
                 st.rerun()
