@@ -488,7 +488,7 @@ elif menu == "Histórico / Arquivados":
 # 10. CADASTROS & CONFIG
 # =========================================================
 elif menu == "⚙️ Cadastros & Config":
-    st.title("⚙️ Configurações Gerais")
+    st.title("Configurações Gerais")
     tab_team, tab_areas, tab_db = st.tabs(["👥 Equipe", "🏢 Áreas", "⚠️ Sistema"])
     
     with tab_team:
@@ -513,4 +513,5 @@ elif menu == "⚙️ Cadastros & Config":
             if os.path.exists("project_management.db"):
                 os.remove("project_management.db")
                 st.rerun()
+
 
