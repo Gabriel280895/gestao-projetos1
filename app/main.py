@@ -91,7 +91,7 @@ with st.sidebar:
             "Docs & Gaps", 
             "Agenda / Calendário", 
             "Histórico / Arquivados", 
-            "⚙️ Cadastros & Config"
+            "Cadastros & Config"
         ],
         icons=[
             "speedometer2", 
@@ -513,6 +513,7 @@ elif menu == "Cadastros & Config":
             if os.path.exists("project_management.db"):
                 os.remove("project_management.db")
                 st.rerun()
+
 
 
 
