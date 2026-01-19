@@ -83,7 +83,7 @@ with st.sidebar:
         menu_title="Gestão de Projetos", 
         options=[
             "Dashboard Executivo", 
-            "📝 Central de Cadastros", 
+            "Novo projeto", 
             "Projetos Ativos", 
             "Tarefas", 
             "Cronograma (Gantt)", 
@@ -216,8 +216,8 @@ if menu == "Dashboard Executivo":
 # =========================================================
 # 2. CENTRAL DE CADASTROS (UNIFICADA)
 # =========================================================
-elif menu == "📝 Central de Cadastros":
-    st.title("📝 Central de Cadastros")
+elif menu == "Novo projeto":
+    st.title("Novo projeto")
     st.markdown("Crie tudo o que precisa em um só lugar.")
     
     t_proj, t_task, t_risk, t_memb, t_gap = st.tabs(["🚀 Novo Projeto", "✅ Nova Tarefa", "🎯 Novo Risco", "👥 Novo Membro", "📂 Novo Gap/Doc"])
@@ -513,3 +513,4 @@ elif menu == "⚙️ Cadastros & Config":
             if os.path.exists("project_management.db"):
                 os.remove("project_management.db")
                 st.rerun()
+
