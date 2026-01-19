@@ -487,18 +487,71 @@ elif menu == "Docs & Gaps":
                 db.execute_command("DELETE FROM project_notes WHERE id=?", (n['id'],)); st.rerun()
 
 # =========================================================
-# 8. AGENDA
+# 8. AGENDA (TURBINADA)
 # =========================================================
 elif menu == "Agenda / Calendário":
     st.title("📆 Agenda de Projetos")
+    
     cal_colors = {"Em andamento": "#3B82F6", "Em Risco": "#EF4444", "Concluído": "#10B981", "Backlog": "#6B7280"}
     events = []
-    for _, row in df_active.iterrows():
-        bg_color = cal_colors.get(row['status'], "#3788d8")
-        event = {"title": f"{row['name']} ({row['manager']})", "start": str(row['start_date']), "end": str(row['end_date']), "backgroundColor": bg_color, "borderColor": bg_color, "allDay": True}
-        events.append(event)
-    calendar_options = {"headerToolbar": {"left": "today prev,next", "center": "title", "right": "dayGridMonth,listMonth"}, "initialView": "dayGridMonth"}
-    calendar(events=events, options=calendar_options)
+    
+    today = date.today()
+    this_month_starts = df_active[pd.to_datetime(df_active['start_date']).dt.month == today.month]
+    this_month_ends = df_active[pd.to_datetime(df_active['end_date']).dt.month == today.month]
+    
+    # 1. MOSTRA MÉTRICAS NO TOPO
+    m1, m2, m3 = st.columns(3)
+    with m1: st.metric("📅 Mês Atual", today.strftime("%B / %Y"))
+    with m2: st.metric("🚀 Inícios este mês", len(this_month_starts))
+    with m3: st.metric("🏁 Entregas este mês", len(this_month_ends), delta_color="inverse")
+    
+    st.divider()
+    
+    # 2. DIVIDE A TELA: CALENDÁRIO À ESQUERDA, LISTA À DIREITA
+    col_cal, col_list = st.columns([2, 1])
+    
+    with col_cal:
+        for _, row in df_active.iterrows():
+            bg_color = cal_colors.get(row['status'], "#3788d8")
+            event = {"title": f"{row['name']} ({row['manager']})", "start": str(row['start_date']), "end": str(row['end_date']), "backgroundColor": bg_color, "borderColor": bg_color, "allDay": True}
+            events.append(event)
+        
+        calendar_options = {
+            "headerToolbar": {"left": "today prev,next", "center": "title", "right": "dayGridMonth,listMonth"},
+            "initialView": "dayGridMonth",
+            "height": 550
+        }
+        calendar(events=events, options=calendar_options)
+        st.caption("Legenda: 🔵 Em andamento | 🔴 Em Risco | 🟢 Concluído | ⚫ Backlog")
+
+    with col_list:
+        st.subheader("🔔 Próximas Entregas")
+        # Pega projetos não concluídos e ordena pela data de entrega
+        upcoming = df_active[df_active['status'] != 'Concluído'].sort_values('end_date').head(5)
+        
+        if not upcoming.empty:
+            for _, proj in upcoming.iterrows():
+                try:
+                    ddate = pd.to_datetime(proj['end_date']).date()
+                    days_left = (ddate - today).days
+                except:
+                    days_left = 0
+                
+                # Cores dinâmicas para os cards
+                if days_left < 0: icon="🚨"; msg=f"Atrasado há {abs(days_left)} dias"; bg="#FEF2F2"
+                elif days_left <= 7: icon="🔥"; msg=f"Vence em {days_left} dias"; bg="#FFF7ED"
+                else: icon="📅"; msg=f"Faltam {days_left} dias"; bg="#F3F4F6"
+                
+                # Card HTML bonitinho
+                st.markdown(f"""
+                <div style='background-color: {bg}; padding: 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #E5E7EB;'>
+                    <div style='font-weight: bold; color: #1F2937; font-size: 14px;'>{icon} {proj['name']}</div>
+                    <div style='font-size: 12px; color: #6B7280; margin-top: 4px;'>👤 Gerente: {proj['manager']}</div>
+                    <div style='font-size: 13px; font-weight: 600; color: #374151; margin-top: 6px;'>{msg} <br><span style='font-weight:400'>({proj['end_date']})</span></div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("Nenhuma entrega próxima encontrada.")
 
 # =========================================================
 # 9. HISTÓRICO
@@ -556,3 +609,4 @@ elif menu == "Config & Export":
                 os.remove("project_management_v2.db")
                 for key in list(st.session_state.keys()): del st.session_state[key]
                 st.rerun()
+
