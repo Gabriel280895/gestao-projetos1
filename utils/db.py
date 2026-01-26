@@ -4,14 +4,14 @@ import pandas as pd
 from datetime import date, timedelta
 import os
 
-# MUDANÇA AQUI: Alterei o nome para 'v2' para forçar a criação de um banco novo
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "project_management_v2.db")
+# Caminho do banco na raiz do projeto (fora de app/ ou utils/)
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "project_management.db")
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # 1. Projetos (Garante a criação com date_changes)
+    # 1. Projetos (Incluindo date_changes)
     c.execute('''CREATE TABLE IF NOT EXISTS projects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
@@ -91,7 +91,7 @@ def seed_data():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # Seed Projetos
+    # Seed Projetos (Exemplo inicial)
     c.execute("SELECT count(*) FROM projects")
     if c.fetchone()[0] == 0:
         today = date.today()
