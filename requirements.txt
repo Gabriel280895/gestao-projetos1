@@ -4,4 +4,3 @@ plotly
 streamlit-calendar
 streamlit-option-menu
 psycopg2-binary
-SQLAlchemy
