@@ -5,13 +5,13 @@ from datetime import date, timedelta
 import os
 
 # Caminho do banco na raiz do projeto
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "project_management.db")
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "project_management_v2.db")
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # 1. Projetos
+    # 1. Projetos (ADICIONADO: notes TEXT)
     c.execute('''CREATE TABLE IF NOT EXISTS projects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
@@ -25,7 +25,8 @@ def init_db():
         scope TEXT,
         results_text TEXT, 
         date_changes INTEGER DEFAULT 0,
-        archived INTEGER DEFAULT 0
+        archived INTEGER DEFAULT 0,
+        notes TEXT
     )''')
     
     # 2. Tarefas
@@ -91,11 +92,11 @@ def seed_data():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # Seed Projetos
+    # Seed Projetos (Atualizado para incluir notes vazio)
     c.execute("SELECT count(*) FROM projects")
     if c.fetchone()[0] == 0:
         today = date.today()
-        c.execute("INSERT INTO projects (name, manager, start_date, end_date, status, date_changes, archived) VALUES (?,?,?,?,?,0,0)", ("Exemplo de Projeto", "Gerente", today, today+timedelta(30), "Em andamento"))
+        c.execute("INSERT INTO projects (name, manager, start_date, end_date, status, date_changes, archived, notes) VALUES (?,?,?,?,?,0,0,'')", ("Exemplo de Projeto", "Gerente", today, today+timedelta(30), "Em andamento"))
     
     # Seed Areas
     default_areas = ["Geral", "TI", "RH", "Financeiro", "Marketing", "Operações", "Comercial", "Logística"]
