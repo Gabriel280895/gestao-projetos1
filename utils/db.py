@@ -1,19 +1,32 @@
 # utils/db.py
-import sqlite3
+import streamlit as st
 import pandas as pd
-from datetime import date, timedelta
+import psycopg2
 import os
 
-# Caminho do banco na raiz do projeto
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "project_management_v2.db")
+# Função para pegar a conexão
+def get_connection():
+    try:
+        # Pega a URL dos Secrets do Streamlit Cloud
+        db_url = st.secrets["connections"]["supabase"]["url"]
+        return psycopg2.connect(db_url)
+    except Exception as e:
+        print(f"Erro de conexão: {e}")
+        return None
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
+    if not conn:
+        st.error("❌ Erro ao conectar no Supabase. Verifique os Secrets.")
+        return
+        
     c = conn.cursor()
     
-    # 1. Projetos (ADICIONADO: notes TEXT)
+    # CRIAÇÃO DAS TABELAS (Sintaxe PostgreSQL)
+    
+    # 1. Projetos
     c.execute('''CREATE TABLE IF NOT EXISTS projects (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         name TEXT,
         code TEXT,
         sponsor TEXT,
@@ -31,8 +44,8 @@ def init_db():
     
     # 2. Tarefas
     c.execute('''CREATE TABLE IF NOT EXISTS tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER,
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER REFERENCES projects(id),
         title TEXT,
         owner TEXT,
         start_date DATE,
@@ -40,32 +53,29 @@ def init_db():
         status TEXT,
         priority TEXT,
         effort INTEGER,
-        progress INTEGER,
-        FOREIGN KEY(project_id) REFERENCES projects(id)
+        progress INTEGER
     )''')
     
     # 3. Riscos
     c.execute('''CREATE TABLE IF NOT EXISTS risks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER,
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER REFERENCES projects(id),
         description TEXT,
         probability TEXT,
         impact TEXT,
         mitigation_plan TEXT,
         owner TEXT,
-        status TEXT DEFAULT 'Ativo',
-        FOREIGN KEY(project_id) REFERENCES projects(id)
+        status TEXT DEFAULT 'Ativo'
     )''')
 
     # 4. Gaps/Notas
     c.execute('''CREATE TABLE IF NOT EXISTS project_notes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER,
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER REFERENCES projects(id),
         category TEXT,
         description TEXT,
         link_url TEXT,
-        created_at DATE,
-        FOREIGN KEY(project_id) REFERENCES projects(id)
+        created_at DATE
     )''')
 
     # 5. Áreas / Sponsors
@@ -75,7 +85,7 @@ def init_db():
 
     # 6. Equipe / Contatos
     c.execute('''CREATE TABLE IF NOT EXISTS team_members (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         name TEXT,
         role TEXT,
         area TEXT,
@@ -86,39 +96,49 @@ def init_db():
     conn.commit()
     conn.close()
     
-    seed_data()
+    # Verifica se precisa inserir dados iniciais
+    check_seed()
 
-def seed_data():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    # Seed Projetos (Atualizado para incluir notes vazio)
-    c.execute("SELECT count(*) FROM projects")
-    if c.fetchone()[0] == 0:
+def check_seed():
+    # Verifica se a tabela projects está vazia
+    df = run_query("SELECT count(*) as cnt FROM projects")
+    if not df.empty and df.iloc[0]['cnt'] == 0:
+        from datetime import date, timedelta
         today = date.today()
-        c.execute("INSERT INTO projects (name, manager, start_date, end_date, status, date_changes, archived, notes) VALUES (?,?,?,?,?,0,0,'')", ("Exemplo de Projeto", "Gerente", today, today+timedelta(30), "Em andamento"))
-    
-    # Seed Areas
-    default_areas = ["Geral", "TI", "RH", "Financeiro", "Marketing", "Operações", "Comercial", "Logística"]
-    for area in default_areas:
-        c.execute("INSERT OR IGNORE INTO sponsors (name) VALUES (?)", (area,))
+        # Insere projeto de exemplo
+        execute_command(
+            "INSERT INTO projects (name, manager, start_date, end_date, status, date_changes, archived, notes) VALUES (%s,%s,%s,%s,%s,0,0,'')", 
+            ("Exemplo Supabase", "Gerente", today, today+timedelta(30), "Em andamento")
+        )
         
-    conn.commit()
-    conn.close()
+        # Insere áreas padrão
+        areas = ["Geral", "TI", "RH", "Financeiro", "Marketing", "Operações", "Comercial", "Logística"]
+        for area in areas:
+            execute_command("INSERT INTO sponsors (name) VALUES (%s) ON CONFLICT DO NOTHING", (area,))
 
 def run_query(query, params=(), fetch=True):
-    conn = sqlite3.connect(DB_PATH)
-    if fetch:
-        try: df = pd.read_sql(query, conn, params=params)
-        except: df = pd.DataFrame()
-        conn.close()
-        return df
-    else:
-        c = conn.cursor()
-        c.execute(query, params)
-        conn.commit()
-        conn.close()
-        return None
+    conn = get_connection()
+    if not conn: return pd.DataFrame()
+    
+    # ADAPTAÇÃO: O código do app usa '?' (SQLite), mas Postgres usa '%s'
+    # Essa linha faz a tradução automática para você não precisar mexer no main.py
+    query_postgres = query.replace('?', '%s')
+    
+    try:
+        if fetch:
+            df = pd.read_sql(query_postgres, conn, params=params)
+            conn.close()
+            return df
+        else:
+            c = conn.cursor()
+            c.execute(query_postgres, params)
+            conn.commit()
+            conn.close()
+            return None
+    except Exception as e:
+        # st.error(f"Erro SQL: {e}") # Descomente para debug
+        if conn: conn.close()
+        return pd.DataFrame() if fetch else None
 
 def execute_command(query, params=()):
     return run_query(query, params, fetch=False)
