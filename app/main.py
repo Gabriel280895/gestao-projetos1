@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import sys
 import os
 import random
-from datetime import date
+from datetime import date, timedelta
 from streamlit_calendar import calendar
 from streamlit_option_menu import option_menu
 
@@ -17,14 +17,13 @@ from utils import db, styles, logic
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Gestão de Projetos", page_icon="🚀", layout="wide")
 
-# Aplica estilos (tenta importar, ignora se falhar)
 try:
     styles.apply_magalog_style()
 except:
     pass
 
 # Inicialização DB
-if not os.path.exists("project_management.db"):
+if not os.path.exists("project_management_v2.db"): 
     db.init_db()
 elif 'db_initialized' not in st.session_state:
     db.init_db()
@@ -32,12 +31,16 @@ elif 'db_initialized' not in st.session_state:
 
 # --- CARREGAMENTO DE DADOS ---
 df_all_projects = db.run_query("SELECT * FROM projects")
-if df_all_projects.empty or 'date_changes' not in df_all_projects.columns:
-    cols = ['id', 'name', 'code', 'sponsor', 'manager', 'start_date', 'end_date', 'status', 'priority', 'scope', 'results_text', 'date_changes', 'archived']
-    if not df_all_projects.empty:
-        if 'date_changes' not in df_all_projects.columns: df_all_projects['date_changes'] = 0
-    else:
-        df_all_projects = pd.DataFrame(columns=cols)
+
+# Garante estrutura completa (incluindo a nova coluna 'notes')
+cols = ['id', 'name', 'code', 'sponsor', 'manager', 'start_date', 'end_date', 'status', 'priority', 'scope', 'results_text', 'date_changes', 'archived', 'notes']
+if df_all_projects.empty:
+    df_all_projects = pd.DataFrame(columns=cols)
+else:
+    for c in cols:
+        if c not in df_all_projects.columns:
+            # Se a coluna notes não existir no dataframe carregado, cria ela vazia
+            df_all_projects[c] = 0 if c == 'date_changes' or c == 'archived' else ""
 
 df_active = df_all_projects[df_all_projects['archived'] == 0].copy()
 df_archived = df_all_projects[df_all_projects['archived'] == 1].copy()
@@ -68,12 +71,12 @@ def project_has_gap(proj_id):
 def show_project_risk_alert(project_id):
     status = df_active.loc[df_active['id'] == project_id, 'status'].values[0]
     if status == 'Em Risco':
-        st.error("🔥 **ALERTA DE STATUS:** Projeto 'Em Risco'.", icon="🔥")
+        st.error("🔥 **ALERTA DE STATUS:** Projeto em risco!", icon="🔥")
     if project_has_gap(project_id):
         gap_desc = active_gaps_alert.loc[active_gaps_alert['project_id'] == project_id, 'description'].values[0]
         st.error(f"⛔ **PROJETO TRAVADO (GAP):** {gap_desc}", icon="🛑")
 
-# Cores
+# Mapa de Cores
 COLOR_MAP = {
     "Concluído": "#22C55E", "Feito": "#22C55E", "🟢 Saudável": "#22C55E",
     "Em andamento": "#F59E0B", "Fazendo": "#3B82F6", "🟡 Atenção": "#F59E0B",
@@ -89,6 +92,7 @@ with st.sidebar:
         menu_title="Gestão de Projetos", 
         options=[
             "Dashboard Executivo", 
+            "Novo projeto", 
             "Projetos Ativos", 
             "Tarefas", 
             "Cronograma (Gantt)", 
@@ -96,10 +100,11 @@ with st.sidebar:
             "Docs & Gaps", 
             "Agenda / Calendário", 
             "Histórico / Arquivados", 
-            "⚙️ Cadastros & Config"
+            "Config & Export"
         ],
         icons=[
             "speedometer2", 
+            "rocket-takeoff", 
             "folder-fill", 
             "list-check", 
             "bar-chart-line", 
@@ -110,7 +115,7 @@ with st.sidebar:
             "gear-wide-connected"
         ],
         menu_icon="rocket-takeoff",
-        default_index=0,
+        default_index=2, 
         styles={
             "container": {"padding": "5px", "background-color": "#0B2D5C"},
             "icon": {"color": "white", "font-size": "20px"}, 
@@ -133,6 +138,9 @@ if menu == "Dashboard Executivo":
                 p_name = df_active.loc[df_active['id'] == row['project_id'], 'name'].values[0]
                 st.error(f"**PROJETO:** {p_name} | 🛑 **TRAVA:** {row['description']}", icon="🚫")
         st.divider()
+
+    if not projects_at_risk.empty:
+        st.warning(f"🔥 Existem {len(projects_at_risk)} projetos 'Em Risco'.")
 
     st.title("📊 Dashboard Executivo")
     
@@ -212,76 +220,185 @@ if menu == "Dashboard Executivo":
         st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. PROJETOS ATIVOS (COM NOVA EDIÇÃO E CRIAÇÃO)
+# 2. NOVO PROJETO (COM CAMPO DE ANOTAÇÕES)
+# =========================================================
+elif menu == "Novo projeto":
+    st.title("Novo projeto")
+    st.markdown("Crie tudo o que precisa em um só lugar.")
+    
+    t_proj, t_task, t_risk, t_memb, t_gap = st.tabs(["🚀 Novo Projeto", "✅ Nova Tarefa", "🎯 Novo Risco", "👥 Novo Membro", "📂 Novo Gap/Doc"])
+    
+    # --- PROJETO ---
+    with t_proj:
+        with st.form("nw_p_cent", clear_on_submit=True):
+            st.markdown("**Nome do Projeto**")
+            nm = st.text_input("", label_visibility="collapsed", placeholder="Digite o nome do projeto...")
+            
+            st.markdown("**Gerente do Projeto**")
+            mg = st.text_input("", label_visibility="collapsed", placeholder="Quem será o responsável?")
+            
+            st.markdown("**Área / Sponsor**")
+            sp = st.selectbox("", LISTA_AREAS, label_visibility="collapsed")
+            
+            c1, c2 = st.columns(2)
+            with c1: 
+                st.markdown("**Início**")
+                d1 = st.date_input("", label_visibility="collapsed")
+            with c2: 
+                st.markdown("**Fim**")
+                d2 = st.date_input("", value=date.today()+timedelta(days=30), label_visibility="collapsed")
+            
+            # --- NOVO CAMPO: ANOTAÇÕES ---
+            st.markdown("**Anotações / Observações**")
+            obs = st.text_area("", label_visibility="collapsed", height=100, placeholder="Descreva mais detalhes sobre o projeto...")
+            
+            st.markdown("") 
+            if st.form_submit_button("Criar Projeto"):
+                if nm:
+                    # Incluído o campo obs (notes)
+                    db.execute_command("INSERT INTO projects (name, manager, sponsor, start_date, end_date, status, date_changes, archived, notes) VALUES (?,?,?,?,?,?,0,0,?)", (nm, mg, sp, d1, d2, "Backlog", obs))
+                    st.success(f"✅ Projeto '{nm}' criado com sucesso!")
+                else: st.warning("Nome obrigatório.")
+
+    # --- TAREFA ---
+    with t_task:
+        if df_active.empty: st.warning("Crie um projeto antes.")
+        else:
+            with st.form("nw_t_cent", clear_on_submit=True):
+                p_sel = st.selectbox("Projeto", df_active['name'])
+                tt = st.text_input("Título da Tarefa")
+                ow = st.text_input("Responsável (Dono)")
+                dd = st.date_input("Prazo de Entrega")
+                if st.form_submit_button("Criar Tarefa"):
+                    pid = df_active[df_active['name'] == p_sel]['id'].values[0]
+                    if tt:
+                        db.execute_command("INSERT INTO tasks (project_id, title, owner, start_date, end_date, status, progress) VALUES (?,?,?,?,?,?,?)", (int(pid), tt, ow, date.today(), dd, "A fazer", 0))
+                        st.success("✅ Tarefa Criada!")
+                    else: st.warning("Título obrigatório.")
+
+    # --- RISCO ---
+    with t_risk:
+        if df_active.empty: st.warning("Crie um projeto antes.")
+        else:
+            with st.form("nw_r_cent", clear_on_submit=True):
+                p_sel = st.selectbox("Projeto ", df_active['name'], key="risc_proj")
+                d = st.text_input("Descrição do Risco")
+                c1, c2 = st.columns(2)
+                p = c1.select_slider("Probabilidade", ["Baixa","Média","Alta"])
+                i = c2.select_slider("Impacto", ["Baixo","Médio","Alto"])
+                pl = st.text_area("Plano de Mitigação")
+                if st.form_submit_button("Criar Risco"):
+                    pid = df_active[df_active['name'] == p_sel]['id'].values[0]
+                    db.execute_command("INSERT INTO risks (project_id, description, probability, impact, mitigation_plan) VALUES (?,?,?,?,?)", (int(pid), d, p, i, pl))
+                    st.success("✅ Risco Salvo!")
+
+    # --- MEMBRO ---
+    with t_memb:
+        with st.form("nw_m_cent", clear_on_submit=True):
+            c1, c2 = st.columns(2)
+            nome = c1.text_input("Nome Completo")
+            cargo = c1.text_input("Cargo")
+            area = c2.selectbox("Área", LISTA_AREAS, key="memb_area")
+            email = c2.text_input("Email")
+            if st.form_submit_button("Cadastrar Membro"):
+                if nome:
+                    db.execute_command("INSERT INTO team_members (name, role, area, email, phone) VALUES (?,?,?,?,?)", (nome, cargo, area, email, ""))
+                    st.success(f"✅ {nome} cadastrado!")
+                else: st.warning("Nome obrigatório.")
+
+    # --- GAP ---
+    with t_gap:
+        if df_active.empty: st.warning("Crie um projeto antes.")
+        else:
+            with st.form("nw_g_cent", clear_on_submit=True):
+                p_sel = st.selectbox("Projeto", df_active['name'], key="gap_proj")
+                d = st.text_area("Descrição do Gap ou Link")
+                t = st.radio("Tipo", ["Gap (Impeditivo)", "Link/Doc"])
+                if st.form_submit_button("Salvar"):
+                    pid = df_active[df_active['name'] == p_sel]['id'].values[0]
+                    db.execute_command("INSERT INTO project_notes (project_id, category, description, created_at) VALUES (?,?,?,?)", (int(pid), t, d, date.today()))
+                    st.success("✅ Salvo com sucesso!")
+
+# =========================================================
+# 3. PROJETOS ATIVOS (COM CAMPO DE ANOTAÇÕES)
 # =========================================================
 elif menu == "Projetos Ativos":
     st.title("📁 Projetos em Andamento")
-    t1, t2 = st.tabs(["Lista", "Novo Projeto"])
     
-    with t1:
-        if not df_active.empty:
-            d = df_active.copy()
-            d['gap_indicador'] = d['id'].apply(lambda x: "⛔ TRAVADO" if project_has_gap(x) else "OK")
-            d['status_icon'] = d['status'].apply(lambda x: "🔥" if x == "Em Risco" else "🟢")
+    if not df_active.empty:
+        d = df_active.copy()
+        d['gap_indicador'] = d['id'].apply(lambda x: "⛔ TRAVADO" if project_has_gap(x) else "OK")
+        d['status_icon'] = d['status'].apply(lambda x: "🔥" if x == "Em Risco" else "🟢")
+        
+        d_display = d[['status_icon', 'gap_indicador', 'name', 'manager', 'status', 'end_date']].rename(columns={
+            'status_icon': 'Sinal', 'gap_indicador': 'Impeditivo?', 'name': 'Nome do Projeto',
+            'manager': 'Gerente', 'status': 'Status Atual', 'end_date': 'Entrega'
+        })
+        st.dataframe(d_display, hide_index=True, use_container_width=True)
+        st.caption("Legenda: 🔥 = Risco de Prazo | ⛔ = Travado por Impeditivo (GAP)")
+        
+        st.divider()
+        st.markdown("### ✏️ Editar Detalhes")
+        
+        sel = st.selectbox("Selecione o Projeto para editar:", df_active['name'])
+        
+        if sel:
+            curr = df_active[df_active['name'] == sel].iloc[0]
+            changes_count = curr['date_changes'] if 'date_changes' in curr and pd.notnull(curr['date_changes']) else 0
             
-            d_display = d[['status_icon', 'gap_indicador', 'name', 'manager', 'status', 'end_date']].rename(columns={
-                'status_icon': 'Sinal', 'gap_indicador': 'Impeditivo?', 'name': 'Nome do Projeto',
-                'manager': 'Gerente', 'status': 'Status Atual', 'end_date': 'Entrega'
-            })
-            st.dataframe(d_display, hide_index=True, use_container_width=True)
-            st.caption("Legenda: 🔥 = Risco de Prazo | ⛔ = Travado por Impeditivo (GAP)")
-            
-            st.divider()
-            st.markdown("### ✏️ Editar Detalhes")
-            
-            sel = st.selectbox("Selecione o Projeto:", df_active['name'])
-            
-            if sel:
-                curr = df_active[df_active['name'] == sel].iloc[0]
-                changes_count = curr['date_changes'] if 'date_changes' in curr and pd.notnull(curr['date_changes']) else 0
-                
-                with st.form("ed_p"):
-                    if changes_count > 0:
-                        st.warning(f"📅 A data de entrega já foi alterada **{int(changes_count)}** vezes.", icon="⚠️")
-                    
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        new_manager = st.text_input("Gerente / Responsável", value=curr['manager'])
-                        new_status = st.selectbox("Status", ["Em andamento", "Em Risco", "Concluído"], index=["Em andamento", "Em Risco", "Concluído"].index(curr['status']))
-                    
-                    with c2:
-                        current_date_obj = pd.to_datetime(curr['end_date']).date()
-                        new_end_date = st.date_input("Data de Entrega", value=current_date_obj)
-                        arq = st.checkbox("Arquivar Projeto", value=bool(curr['archived']))
+            with st.form("ed_p_adv"):
+                if changes_count > 0:
+                    st.warning(f"📅 Atenção: A data de entrega já foi alterada **{int(changes_count)}** vezes.", icon="⚠️")
 
-                    if st.form_submit_button("💾 Salvar Alterações"):
-                        final_changes = int(changes_count)
-                        if str(new_end_date) != str(current_date_obj):
-                            final_changes += 1
-                            st.toast(f"Data alterada! Contador subiu para {final_changes}.", icon="📈")
-                        
-                        db.execute_command(
-                            "UPDATE projects SET manager=?, end_date=?, status=?, archived=?, date_changes=? WHERE id=?", 
-                            (new_manager, new_end_date, new_status, 1 if arq else 0, final_changes, int(curr['id']))
-                        )
-                        st.success("Atualizado com sucesso!")
-                        st.rerun()
-    with t2:
-        with st.form("nw_p", clear_on_submit=True):
-            nm = st.text_input("Nome do Projeto")
-            mg = st.text_input("Gerente do Projeto")
-            sp = st.selectbox("Área / Sponsor", LISTA_AREAS)
-            c1, c2 = st.columns(2)
-            d1 = c1.date_input("Início")
-            d2 = c2.date_input("Fim")
-            if st.form_submit_button("Criar Projeto"):
-                if nm:
-                    db.execute_command("INSERT INTO projects (name, manager, sponsor, start_date, end_date, status, date_changes, archived) VALUES (?,?,?,?,?,?,0,0)", (nm, mg, sp, d1, d2, "Backlog"))
-                    st.success(f"✅ Projeto '{nm}' criado!")
-                else: st.warning("Nome obrigatório.")
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("**Gerente**")
+                    new_manager = st.text_input("", value=curr['manager'], label_visibility="collapsed")
+                    
+                    st.markdown("**Status**")
+                    status_options = ["Backlog", "Em andamento", "Em Risco", "Concluído", "Cancelado"]
+                    try:
+                        idx = status_options.index(curr['status'])
+                    except ValueError:
+                        idx = 0 
+                    new_status = st.selectbox("", status_options, index=idx, label_visibility="collapsed")
+                
+                with c2:
+                    st.markdown("**Nova Data de Entrega**")
+                    try:
+                        current_date_obj = pd.to_datetime(curr['end_date']).date()
+                    except:
+                        current_date_obj = date.today()
+                    
+                    new_end_date = st.date_input("", value=current_date_obj, label_visibility="collapsed")
+                    
+                    st.markdown("")
+                    arq = st.checkbox("Arquivar Projeto", value=bool(curr['archived']))
+
+                # --- NOVO CAMPO: ANOTAÇÕES NA EDIÇÃO ---
+                st.markdown("**Anotações / Observações**")
+                # Recupera o valor atual do banco, se existir
+                curr_notes = curr['notes'] if 'notes' in curr and pd.notnull(curr['notes']) else ""
+                new_obs = st.text_area("", value=curr_notes, label_visibility="collapsed", height=100)
+
+                if st.form_submit_button("💾 Salvar Alterações"):
+                    final_changes = int(changes_count)
+                    if str(new_end_date) != str(current_date_obj):
+                        final_changes += 1
+                        st.toast(f"Data alterada! Contador subiu para {final_changes}.", icon="📈")
+                    
+                    # Atualiza no banco incluindo as notas
+                    db.execute_command(
+                        "UPDATE projects SET manager=?, end_date=?, status=?, archived=?, date_changes=?, notes=? WHERE id=?", 
+                        (new_manager, new_end_date, new_status, 1 if arq else 0, final_changes, new_obs, int(curr['id']))
+                    )
+                    st.success("Projeto atualizado!")
+                    st.rerun()
+    else:
+        st.info("Nenhum projeto ativo. Vá em 'Novo projeto' para criar um.")
 
 # =========================================================
-# 3. TAREFAS
+# 4. TAREFAS
 # =========================================================
 elif menu == "Tarefas":
     st.title("✅ Tarefas (Visual Kanban)")
@@ -294,53 +411,40 @@ elif menu == "Tarefas":
         show_project_risk_alert(sel_id)
         tv = df_tasks[df_tasks['project_id'] == sel_id]
         
-        t1, t2 = st.tabs(["Quadro", "Nova Tarefa"])
-        with t1:
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                st.markdown("### 📝 A fazer"); st.markdown("---")
-                for _, t in tv[tv['status'] == "A fazer"].iterrows():
-                    with st.container(border=True):
-                        st.markdown(f"**{t['title']}**"); st.caption(f"👤 {t['owner']}")
-                        with st.expander("✏️ Editar"):
-                            with st.form(f"f1_{t['id']}"):
-                                if st.form_submit_button("Mover > Fazendo"):
-                                    db.execute_command("UPDATE tasks SET status='Fazendo', progress=10 WHERE id=?", (t['id'],)); st.rerun()
-            with c2:
-                st.markdown("### 🔨 Fazendo"); st.markdown("---")
-                for _, t in tv[tv['status'] == "Fazendo"].iterrows():
-                    st.warning(f"**{t['title']}**\n\n👤 {t['owner']}", icon="🏗️")
-                    with st.expander("⚙️ Ações"):
-                            with st.form(f"f2_{t['id']}"):
-                                op = st.selectbox("Mover:", ["Concluir", "Bloquear", "Voltar"], key=f"sel_{t['id']}")
-                                if st.form_submit_button("Atualizar"):
-                                    s = "Feito" if op=="Concluir" else "Bloqueado" if op=="Bloquear" else "A fazer"
-                                    p = 100 if op=="Concluir" else 50 if op=="Bloquear" else 0
-                                    db.execute_command("UPDATE tasks SET status=?, progress=? WHERE id=?", (s, p, t['id'])); st.rerun()
-            with c3:
-                st.markdown("### 🚫 Bloqueado"); st.markdown("---")
-                for _, t in tv[tv['status'] == "Bloqueado"].iterrows():
-                    st.error(f"**{t['title']}**", icon="🚨")
-                    if st.button("Desbloquear", key=f"unb_{t['id']}"):
-                        db.execute_command("UPDATE tasks SET status='Fazendo' WHERE id=?", (t['id'],)); st.rerun()
-            with c4:
-                st.markdown("### ✅ Feito"); st.markdown("---")
-                for _, t in tv[tv['status'] == "Feito"].iterrows():
-                    st.success(f"**{t['title']}**", icon="🎉")
-        
-        with t2:
-            with st.form("new_t_form", clear_on_submit=True):
-                tt = st.text_input("Título da Tarefa")
-                ow = st.text_input("Responsável (Dono)")
-                dd = st.date_input("Prazo de Entrega")
-                if st.form_submit_button("Criar Tarefa"):
-                    if tt:
-                        db.execute_command("INSERT INTO tasks (project_id, title, owner, start_date, end_date, status, progress) VALUES (?,?,?,?,?,?,?)", (sel_id, tt, ow, date.today(), dd, "A fazer", 0))
-                        st.success("✅ Tarefa Criada!")
-                    else: st.warning("Título obrigatório.")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.markdown("### 📝 A fazer"); st.markdown("---")
+            for _, t in tv[tv['status'] == "A fazer"].iterrows():
+                with st.container(border=True):
+                    st.markdown(f"**{t['title']}**"); st.caption(f"👤 {t['owner']}")
+                    with st.expander("✏️ Editar"):
+                        with st.form(f"f1_{t['id']}"):
+                            if st.form_submit_button("Mover > Fazendo"):
+                                db.execute_command("UPDATE tasks SET status='Fazendo', progress=10 WHERE id=?", (t['id'],)); st.rerun()
+        with c2:
+            st.markdown("### 🔨 Fazendo"); st.markdown("---")
+            for _, t in tv[tv['status'] == "Fazendo"].iterrows():
+                st.warning(f"**{t['title']}**\n\n👤 {t['owner']}", icon="🏗️")
+                with st.expander("⚙️ Ações"):
+                        with st.form(f"f2_{t['id']}"):
+                            op = st.selectbox("Mover:", ["Concluir", "Bloquear", "Voltar"], key=f"sel_{t['id']}")
+                            if st.form_submit_button("Atualizar"):
+                                s = "Feito" if op=="Concluir" else "Bloqueado" if op=="Bloquear" else "A fazer"
+                                p = 100 if op=="Concluir" else 50 if op=="Bloquear" else 0
+                                db.execute_command("UPDATE tasks SET status=?, progress=? WHERE id=?", (s, p, t['id'])); st.rerun()
+        with c3:
+            st.markdown("### 🚫 Bloqueado"); st.markdown("---")
+            for _, t in tv[tv['status'] == "Bloqueado"].iterrows():
+                st.error(f"**{t['title']}**", icon="🚨")
+                if st.button("Desbloquear", key=f"unb_{t['id']}"):
+                    db.execute_command("UPDATE tasks SET status='Fazendo' WHERE id=?", (t['id'],)); st.rerun()
+        with c4:
+            st.markdown("### ✅ Feito"); st.markdown("---")
+            for _, t in tv[tv['status'] == "Feito"].iterrows():
+                st.success(f"**{t['title']}**", icon="🎉")
 
 # =========================================================
-# 4. GANTT
+# 5. GANTT
 # =========================================================
 elif menu == "Cronograma (Gantt)":
     st.title("📅 Gantt")
@@ -350,47 +454,33 @@ elif menu == "Cronograma (Gantt)":
         st.plotly_chart(fig, use_container_width=True)
 
 # =========================================================
-# 5. RISCOS
+# 6. RISCOS
 # =========================================================
 elif menu == "Riscos":
     st.title("🎯 Riscos")
-    if 'r_view' not in st.session_state: st.session_state['r_view'] = 'matriz'
     opts = dict(zip(df_active['name'], df_active['id']))
     if opts:
         sel_nm = st.selectbox("Projeto:", list(opts.keys()))
         sel_id = opts[sel_nm]
         show_project_risk_alert(sel_id)
         
-        if st.session_state['r_view'] == 'matriz':
-            if st.button("➕ Novo Risco"): st.session_state['r_view'] = 'novo'; st.rerun()
-            rv = df_risks[df_risks['project_id'] == sel_id].copy()
-            if not rv.empty:
-                m = {'Baixa':1,'Baixo':1,'Média':2,'Médio':2,'Alta':3,'Alto':3}
-                rv['px'] = rv['impact'].map(m).fillna(2) + [random.uniform(-0.1,0.1) for _ in range(len(rv))]
-                rv['py'] = rv['probability'].map(m).fillna(2) + [random.uniform(-0.1,0.1) for _ in range(len(rv))]
-                fig = go.Figure()
-                fig.add_vline(x=2.5, line_dash="dash", line_color="#ccc")
-                fig.add_hline(y=2.5, line_dash="dash", line_color="#ccc")
-                col_desc = 'description' if 'description' in rv.columns else 'title'
-                fig.add_trace(go.Scatter(x=rv['px'], y=rv['py'], mode='markers', hovertext=rv[col_desc], marker=dict(size=20, color='#EF4444')))
-                fig.update_layout(title="Matriz de Riscos", height=400)
-                st.plotly_chart(fig, use_container_width=True)
-                st.dataframe(rv[[col_desc, 'mitigation_plan']], hide_index=True)
-            else: st.info("Sem riscos.")
-            
-        elif st.session_state['r_view'] == 'novo':
-            if st.button("Voltar"): st.session_state['r_view'] = 'matriz'; st.rerun()
-            with st.form("nr", clear_on_submit=True):
-                d = st.text_input("Descrição")
-                p = st.select_slider("Probabilidade", ["Baixa","Média","Alta"])
-                i = st.select_slider("Impacto", ["Baixo","Médio","Alto"])
-                pl = st.text_area("Plano")
-                if st.form_submit_button("Salvar"):
-                    db.execute_command("INSERT INTO risks (project_id, description, probability, impact, mitigation_plan) VALUES (?,?,?,?,?)", (sel_id, d, p, i, pl))
-                    st.success("Salvo!"); st.session_state['r_view'] = 'matriz'; st.rerun()
+        rv = df_risks[df_risks['project_id'] == sel_id].copy()
+        if not rv.empty:
+            m = {'Baixa':1,'Baixo':1,'Média':2,'Médio':2,'Alta':3,'Alto':3}
+            rv['px'] = rv['impact'].map(m).fillna(2) + [random.uniform(-0.1,0.1) for _ in range(len(rv))]
+            rv['py'] = rv['probability'].map(m).fillna(2) + [random.uniform(-0.1,0.1) for _ in range(len(rv))]
+            fig = go.Figure()
+            fig.add_vline(x=2.5, line_dash="dash", line_color="#ccc")
+            fig.add_hline(y=2.5, line_dash="dash", line_color="#ccc")
+            col_desc = 'description' if 'description' in rv.columns else 'title'
+            fig.add_trace(go.Scatter(x=rv['px'], y=rv['py'], mode='markers', hovertext=rv[col_desc], marker=dict(size=20, color='#EF4444')))
+            fig.update_layout(title="Matriz de Riscos", height=400)
+            st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(rv[[col_desc, 'mitigation_plan']], hide_index=True)
+        else: st.info("Sem riscos cadastrados.")
 
 # =========================================================
-# 6. DOCS & GAPS
+# 7. DOCS & GAPS
 # =========================================================
 elif menu == "Docs & Gaps":
     st.title("📂 Docs & Gaps")
@@ -400,34 +490,75 @@ elif menu == "Docs & Gaps":
         sel_id = opts[sel_nm]
         show_project_risk_alert(sel_id)
         nv = df_notes[df_notes['project_id'] == sel_id]
-        with st.form("ngap"):
-            d = st.text_area("Descrição")
-            t = st.radio("Tipo", ["Gap", "Link"])
-            if st.form_submit_button("Salvar"):
-                db.execute_command("INSERT INTO project_notes (project_id, category, description, created_at) VALUES (?,?,?,?)", (sel_id, t, d, date.today()))
-                st.rerun()
-        st.divider()
         for _, n in nv.iterrows():
             st.write(f"**{n['category']}**: {n['description']}")
-            if st.button("x", key=f"dn_{n['id']}"):
+            if st.button("Remover", key=f"dn_{n['id']}"):
                 db.execute_command("DELETE FROM project_notes WHERE id=?", (n['id'],)); st.rerun()
 
 # =========================================================
-# 7. AGENDA
+# 8. AGENDA (TURBINADA)
 # =========================================================
 elif menu == "Agenda / Calendário":
     st.title("📆 Agenda de Projetos")
+    
     cal_colors = {"Em andamento": "#3B82F6", "Em Risco": "#EF4444", "Concluído": "#10B981", "Backlog": "#6B7280"}
     events = []
-    for _, row in df_active.iterrows():
-        bg_color = cal_colors.get(row['status'], "#3788d8")
-        event = {"title": f"{row['name']} ({row['manager']})", "start": str(row['start_date']), "end": str(row['end_date']), "backgroundColor": bg_color, "borderColor": bg_color, "allDay": True}
-        events.append(event)
-    calendar_options = {"headerToolbar": {"left": "today prev,next", "center": "title", "right": "dayGridMonth,listMonth"}, "initialView": "dayGridMonth"}
-    calendar(events=events, options=calendar_options)
+    
+    today = date.today()
+    this_month_starts = df_active[pd.to_datetime(df_active['start_date']).dt.month == today.month]
+    this_month_ends = df_active[pd.to_datetime(df_active['end_date']).dt.month == today.month]
+    
+    m1, m2, m3 = st.columns(3)
+    with m1: st.metric("📅 Mês Atual", today.strftime("%B / %Y"))
+    with m2: st.metric("🚀 Inícios este mês", len(this_month_starts))
+    with m3: st.metric("🏁 Entregas este mês", len(this_month_ends), delta_color="inverse")
+    
+    st.divider()
+    
+    col_cal, col_list = st.columns([2, 1])
+    
+    with col_cal:
+        for _, row in df_active.iterrows():
+            bg_color = cal_colors.get(row['status'], "#3788d8")
+            event = {"title": f"{row['name']} ({row['manager']})", "start": str(row['start_date']), "end": str(row['end_date']), "backgroundColor": bg_color, "borderColor": bg_color, "allDay": True}
+            events.append(event)
+        
+        calendar_options = {
+            "headerToolbar": {"left": "today prev,next", "center": "title", "right": "dayGridMonth,listMonth"},
+            "initialView": "dayGridMonth",
+            "height": 550
+        }
+        calendar(events=events, options=calendar_options)
+        st.caption("Legenda: 🔵 Em andamento | 🔴 Em Risco | 🟢 Concluído | ⚫ Backlog")
+
+    with col_list:
+        st.subheader("🔔 Próximas Entregas")
+        upcoming = df_active[df_active['status'] != 'Concluído'].sort_values('end_date').head(5)
+        
+        if not upcoming.empty:
+            for _, proj in upcoming.iterrows():
+                try:
+                    ddate = pd.to_datetime(proj['end_date']).date()
+                    days_left = (ddate - today).days
+                except:
+                    days_left = 0
+                
+                if days_left < 0: icon="🚨"; msg=f"Atrasado há {abs(days_left)} dias"; bg="#FEF2F2"
+                elif days_left <= 7: icon="🔥"; msg=f"Vence em {days_left} dias"; bg="#FFF7ED"
+                else: icon="📅"; msg=f"Faltam {days_left} dias"; bg="#F3F4F6"
+                
+                st.markdown(f"""
+                <div style='background-color: {bg}; padding: 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #E5E7EB;'>
+                    <div style='font-weight: bold; color: #1F2937; font-size: 14px;'>{icon} {proj['name']}</div>
+                    <div style='font-size: 12px; color: #6B7280; margin-top: 4px;'>👤 Gerente: {proj['manager']}</div>
+                    <div style='font-size: 13px; font-weight: 600; color: #374151; margin-top: 6px;'>{msg} <br><span style='font-weight:400'>({proj['end_date']})</span></div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("Nenhuma entrega próxima encontrada.")
 
 # =========================================================
-# 8. HISTÓRICO
+# 9. HISTÓRICO
 # =========================================================
 elif menu == "Histórico / Arquivados":
     st.title("🏛️ Arquivo Morto")
@@ -441,9 +572,9 @@ elif menu == "Histórico / Arquivados":
                     db.execute_command("UPDATE projects SET archived = 0 WHERE id = ?", (row['id'],)); st.rerun()
 
 # =========================================================
-# 9. CADASTROS & CONFIG
+# 10. CONFIG & EXPORT (RESET DB)
 # =========================================================
-elif menu == "⚙️ Cadastros & Config":
+elif menu == "Config & Export":
     st.title("⚙️ Configurações Gerais")
     tab_team, tab_areas, tab_db = st.tabs(["👥 Equipe", "🏢 Áreas", "⚠️ Sistema"])
     
@@ -476,7 +607,9 @@ elif menu == "⚙️ Cadastros & Config":
     
     with tab_db:
         st.subheader("Reset")
+        st.warning("Clique aqui para apagar o banco antigo e corrigir o erro de 'coluna faltando'.")
         if st.button("RESETAR BANCO DE DADOS (Zerar Tudo)"):
-            if os.path.exists("project_management.db"):
-                os.remove("project_management.db")
+            if os.path.exists("project_management_v2.db"): 
+                os.remove("project_management_v2.db")
+                for key in list(st.session_state.keys()): del st.session_state[key]
                 st.rerun()
